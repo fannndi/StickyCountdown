@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Globalization;
@@ -57,6 +58,115 @@ namespace StickyCountdown
             p.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
             p.CloseFigure();
             return p;
+        }
+    }
+
+    static class Lang
+    {
+        public static string Code = "id";
+
+        static readonly Dictionary<string, string> IdTable = new Dictionary<string, string>();
+        static readonly Dictionary<string, string> EnTable = new Dictionary<string, string>();
+
+        static void Set(string k, string id, string en)
+        {
+            IdTable[k] = id;
+            EnTable[k] = en;
+        }
+
+        static Lang()
+        {
+            Set("add_model", "+  Tambah model", "+  Add model");
+            Set("cue_model", "Nama model", "Model name");
+            Set("notes", "CATATAN", "NOTES");
+            Set("hint", "klik kanan baris = atur reset", "right-click a row to set reset");
+            Set("done", "Done", "Done");
+            Set("tip_title", "Drag: pindah \u2022 Klik 2x: perkecil \u2022 Klik kanan: menu", "Drag: move \u2022 Double-click: minimize \u2022 Right-click: menu");
+            Set("tip_min", "Perkecil", "Minimize");
+            Set("tip_min_locked", "Selesaikan dulu (klik Done pada baris)", "Finish first (click Done on the row)");
+            Set("tip_expand", "Buka lagi", "Expand again");
+            Set("tip_settings", "Pengaturan", "Settings");
+            Set("tip_add", "Tambah baris model baru", "Add a new model row");
+            Set("tip_notes", "Catatan bebas: jam pakai ideal, info harga per jam, dll.", "Free notes: best usage hours, per-hour pricing info, etc.");
+            Set("tip_time", "Klik untuk atur reset", "Click to set reset");
+            Set("tip_done", "Klik kalau sudah selesai dipakai", "Click when you are done using it");
+            Set("tip_del", "Hapus baris ini", "Delete this row");
+            Set("m_add", "Tambah model", "Add model");
+            Set("m_settings", "Pengaturan", "Settings");
+            Set("m_shrink", "Perkecil", "Minimize");
+            Set("m_expand", "Buka", "Expand");
+            Set("m_top", "Selalu di atas", "Always on top");
+            Set("m_exit", "Keluar", "Exit");
+            Set("m_hours", "Hitung mundur ... jam", "Countdown ... hours");
+            Set("m_until", "Sampai jam ...", "Until time ...");
+            Set("m_markdone", "Tandai selesai (Done)", "Mark done");
+            Set("m_clear", "Bersihkan", "Clear");
+            Set("m_del", "Hapus baris", "Delete row");
+            Set("st_ready", "Status: SIAP dipakai lagi", "Status: READY to use");
+            Set("st_count", "Countdown {0} jam", "Countdown {0} hours");
+            Set("st_until", "Sampai jam {0}", "Until {0}");
+            Set("st_none", "Belum diatur", "Not set");
+            Set("p_hours_title", "Hitung mundur", "Countdown");
+            Set("p_hours_text", "Countdown berapa jam? (boleh desimal, contoh 5 atau 4.5)", "Countdown for how many hours? (decimals allowed, e.g. 5 or 4.5)");
+            Set("p_hours_err", "Masukkan angka jam antara 0.1 sampai 168.", "Enter a number of hours between 0.1 and 168.");
+            Set("p_until_title", "Sampai jam", "Until time");
+            Set("p_until_text", "Sampai jam berapa? Format 24 jam, contoh 22:00", "Until what time? 24-hour format, e.g. 22:00");
+            Set("p_until_err", "Format jam tidak valid. Contoh yang benar: 22:00 atau 5:30.", "Invalid time format. Correct examples: 22:00 or 5:30.");
+            Set("p_until_passed", "Jam {0} sudah lewat hari ini. Hitung ke besok jam {0}?", "Time {0} has already passed today. Count to tomorrow {0}?");
+            Set("set_title", "Pengaturan", "Settings");
+            Set("set_lang", "BAHASA / LANGUAGE", "LANGUAGE");
+            Set("set_shutdown", "TIMER SHUTDOWN", "SHUTDOWN TIMER");
+            Set("set_shut_off", "Tidak aktif", "Not active");
+            Set("set_shut_on", "Aktif \u2014 PC shutdown dalam {0}", "Active \u2014 PC shuts down in {0}");
+            Set("set_shut_btn", "Atur countdown...", "Set countdown...");
+            Set("set_shut_cancel", "Batalkan", "Cancel");
+            Set("set_shut_hint", "PC akan dimatikan otomatis oleh Windows saat countdown habis. Tetap berjalan walau widget ditutup.", "Windows will shut down the PC when the countdown ends. Keeps running even if the widget is closed.");
+            Set("p_shut_title", "Timer shutdown", "Shutdown timer");
+            Set("p_shut_text", "Shutdown dalam berapa menit? (1 - 1440)", "Shut down in how many minutes? (1 - 1440)");
+            Set("p_shut_err", "Masukkan angka menit antara 1 sampai 1440.", "Enter a number of minutes between 1 and 1440.");
+            Set("err_shut_sched", "Gagal menjadwalkan shutdown.", "Failed to schedule shutdown.");
+            Set("err_shut_cancel", "Gagal membatalkan shutdown.", "Failed to cancel shutdown.");
+            Set("msg_shut_cancel", "Shutdown sudah dibatalkan.", "Shutdown has been canceled.");
+        }
+
+        public static string T(string k)
+        {
+            string v;
+            if (Code == "en" && EnTable.TryGetValue(k, out v)) return v;
+            if (IdTable.TryGetValue(k, out v)) return v;
+            return k;
+        }
+
+        public static string T(string k, params object[] args)
+        {
+            return string.Format(CultureInfo.InvariantCulture, T(k), args);
+        }
+    }
+
+    static class Shut
+    {
+        public static int Run(string args)
+        {
+            try
+            {
+                ProcessStartInfo psi = new ProcessStartInfo("shutdown", args);
+                psi.CreateNoWindow = true;
+                psi.UseShellExecute = false;
+                Process p = Process.Start(psi);
+                if (!p.WaitForExit(8000)) return -1;
+                return p.ExitCode;
+            }
+            catch { return -1; }
+        }
+
+        public static int Schedule(int seconds)
+        {
+            return Run("/s /t " + seconds.ToString(CultureInfo.InvariantCulture));
+        }
+
+        public static int Abort()
+        {
+            return Run("/a");
         }
     }
 
@@ -168,6 +278,295 @@ namespace StickyCountdown
         public bool Hovered;
     }
 
+    class SettingsForm : Form
+    {
+        readonly StickyForm main;
+        float scale = 1f;
+        bool applying;
+
+        Label titleLabel;
+        Label langHead;
+        Label shutHead;
+        Label shutStatus;
+        Label shutHint;
+        RadioButton rbId;
+        RadioButton rbEn;
+        RoundButton closeBtn;
+        RoundButton setBtn;
+        RoundButton cancelBtn;
+        System.Windows.Forms.Timer tick;
+
+        [DllImport("user32.dll")]
+        private static extern bool ReleaseCapture();
+        [DllImport("user32.dll")]
+        private static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+        const uint WM_NCLBUTTONDOWN = 0xA1;
+        const int HTCAPTION = 2;
+
+        int S(int v)
+        {
+            return (int)Math.Round(v * scale);
+        }
+
+        public SettingsForm(StickyForm owner)
+        {
+            main = owner;
+            FormBorderStyle = FormBorderStyle.None;
+            ShowInTaskbar = false;
+            StartPosition = FormStartPosition.Manual;
+            Text = "Settings";
+            BackColor = Ui.Card;
+            AutoScaleMode = AutoScaleMode.None;
+            DoubleBuffered = true;
+            SetStyle(ControlStyles.ResizeRedraw, true);
+
+            using (Graphics g = CreateGraphics())
+                scale = g.DpiX / 96f;
+
+            BuildUi();
+            TranslateUi();
+
+            tick = new System.Windows.Forms.Timer();
+            tick.Interval = 1000;
+            tick.Tick += delegate(object s, EventArgs e) { UpdateShutdownStatus(); };
+            tick.Start();
+
+            ClientSize = new Size(S(330), S(262));
+            PositionNearOwner();
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            Region old = Region;
+            Region = new Region(Ui.Round(new Rectangle(0, 0, Width, Height), S(14)));
+            if (old != null) old.Dispose();
+            LayoutAll();
+            Invalidate();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            e.Graphics.Clear(Ui.Card);
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using (Pen pen = new Pen(Ui.Border, S(2)))
+            using (GraphicsPath path = Ui.Round(new Rectangle(S(1), S(1), Width - S(3), Height - S(3)), S(13)))
+                e.Graphics.DrawPath(pen, path);
+            using (Pen pen = new Pen(Ui.Separator, 1))
+                e.Graphics.DrawLine(pen, S(14), S(40), Width - S(14), S(40));
+        }
+
+        void BuildUi()
+        {
+            titleLabel = new Label();
+            titleLabel.AutoSize = false;
+            titleLabel.BackColor = Color.Transparent;
+            titleLabel.ForeColor = Ui.Title;
+            titleLabel.Font = new Font("Segoe UI Semibold", 11.5f);
+            titleLabel.TextAlign = ContentAlignment.MiddleLeft;
+            titleLabel.Cursor = Cursors.SizeAll;
+
+            closeBtn = new RoundButton();
+            closeBtn.Radius = S(12);
+            closeBtn.Text = "\u00D7";
+            closeBtn.Font = new Font("Segoe UI", 12f);
+            closeBtn.ForeColor = Ui.CloseText;
+            closeBtn.BackColor = Ui.Card;
+            closeBtn.FlatAppearance.BorderSize = 0;
+            closeBtn.FlatAppearance.MouseOverBackColor = Ui.CloseHover;
+            closeBtn.FlatAppearance.MouseDownBackColor = Ui.CloseHover;
+            closeBtn.Click += delegate(object s, EventArgs e) { Close(); };
+
+            langHead = MakeHead();
+            shutHead = MakeHead();
+
+            rbId = MakeRadio();
+            rbEn = MakeRadio();
+            rbId.CheckedChanged += delegate(object s, EventArgs e)
+            {
+                if (applying) return;
+                if (rbId.Checked) main.SetLanguage("id");
+            };
+            rbEn.CheckedChanged += delegate(object s, EventArgs e)
+            {
+                if (applying) return;
+                if (rbEn.Checked) main.SetLanguage("en");
+            };
+
+            shutStatus = new Label();
+            shutStatus.AutoSize = false;
+            shutStatus.BackColor = Color.Transparent;
+            shutStatus.ForeColor = Ui.Text;
+            shutStatus.Font = new Font("Segoe UI Semibold", 9.5f);
+            shutStatus.TextAlign = ContentAlignment.MiddleLeft;
+
+            shutHint = new Label();
+            shutHint.AutoSize = false;
+            shutHint.BackColor = Color.Transparent;
+            shutHint.ForeColor = Ui.Hint;
+            shutHint.Font = new Font("Segoe UI", 7.5f);
+            shutHint.TextAlign = ContentAlignment.TopLeft;
+
+            setBtn = new RoundButton();
+            setBtn.Radius = S(9);
+            setBtn.Font = new Font("Segoe UI", 9f);
+            setBtn.BackColor = Ui.BtnFill;
+            setBtn.ForeColor = Ui.BtnText;
+            setBtn.FlatAppearance.BorderColor = Ui.BtnBorder;
+            setBtn.FlatAppearance.BorderSize = 1;
+            setBtn.FlatAppearance.MouseOverBackColor = Ui.BtnHover;
+            setBtn.FlatAppearance.MouseDownBackColor = Ui.BtnDown;
+            setBtn.Click += delegate(object s, EventArgs e) { main.PromptShutdown(); UpdateShutdownStatus(); };
+
+            cancelBtn = new RoundButton();
+            cancelBtn.Radius = S(9);
+            cancelBtn.Font = new Font("Segoe UI", 9f);
+            cancelBtn.BackColor = Ui.BtnFill;
+            cancelBtn.ForeColor = Ui.BtnText;
+            cancelBtn.FlatAppearance.BorderColor = Ui.BtnBorder;
+            cancelBtn.FlatAppearance.BorderSize = 1;
+            cancelBtn.FlatAppearance.MouseOverBackColor = Ui.BtnHover;
+            cancelBtn.FlatAppearance.MouseDownBackColor = Ui.BtnDown;
+            cancelBtn.Click += delegate(object s, EventArgs e) { main.CancelShutdown(); UpdateShutdownStatus(); };
+
+            Controls.Add(titleLabel);
+            Controls.Add(closeBtn);
+            Controls.Add(langHead);
+            Controls.Add(shutHead);
+            Controls.Add(rbId);
+            Controls.Add(rbEn);
+            Controls.Add(shutStatus);
+            Controls.Add(shutHint);
+            Controls.Add(setBtn);
+            Controls.Add(cancelBtn);
+
+            titleLabel.MouseDown += DragMove;
+        }
+
+        Label MakeHead()
+        {
+            Label l = new Label();
+            l.AutoSize = false;
+            l.BackColor = Color.Transparent;
+            l.ForeColor = Ui.Hint;
+            l.Font = new Font("Segoe UI Semibold", 7.5f);
+            l.TextAlign = ContentAlignment.MiddleLeft;
+            return l;
+        }
+
+        RadioButton MakeRadio()
+        {
+            RadioButton rb = new RadioButton();
+            rb.AutoSize = false;
+            rb.BackColor = Color.Transparent;
+            rb.ForeColor = Ui.Text;
+            rb.Font = new Font("Segoe UI", 9.5f);
+            rb.FlatStyle = FlatStyle.Standard;
+            return rb;
+        }
+
+        void DragMove(object s, MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left) return;
+            ReleaseCapture();
+            SendMessage(Handle, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
+        }
+
+        void PositionNearOwner()
+        {
+            int x = main.Right + S(8);
+            Rectangle wa = Screen.FromControl(main).WorkingArea;
+            if (x + Width > wa.Right) x = main.Left - Width - S(8);
+            if (x < wa.Left) x = wa.Left + S(8);
+            int y = main.Top;
+            if (y + Height > wa.Bottom) y = wa.Bottom - Height - S(8);
+            if (y < wa.Top) y = wa.Top + S(8);
+            Location = new Point(x, y);
+        }
+
+        void LayoutAll()
+        {
+            if (titleLabel == null) return;
+            int pad = S(12);
+            int w = ClientSize.Width;
+
+            titleLabel.SetBounds(pad, S(10), w - pad * 2 - S(34), S(22));
+            closeBtn.SetBounds(w - pad - S(24), S(9), S(24), S(24));
+
+            int y = S(52);
+            langHead.SetBounds(pad, y, w - pad * 2, S(12));
+            y += S(18);
+            rbId.SetBounds(pad + S(4), y, w - pad * 2 - S(8), S(22));
+            y += S(26);
+            rbEn.SetBounds(pad + S(4), y, w - pad * 2 - S(8), S(22));
+            y += S(38);
+
+            shutHead.SetBounds(pad, y, w - pad * 2, S(12));
+            y += S(18);
+            shutStatus.SetBounds(pad, y, w - pad * 2, S(20));
+            y += S(26);
+            int bw = S(160);
+            setBtn.SetBounds(pad, y, bw, S(28));
+            cancelBtn.SetBounds(pad + bw + S(8), y, S(100), S(28));
+            y += S(38);
+            shutHint.SetBounds(pad, y, w - pad * 2, S(44));
+        }
+
+        public void TranslateUi()
+        {
+            applying = true;
+            titleLabel.Text = Lang.T("set_title");
+            Text = Lang.T("set_title");
+            langHead.Text = Lang.T("set_lang");
+            shutHead.Text = Lang.T("set_shutdown");
+            shutHint.Text = Lang.T("set_shut_hint");
+            setBtn.Text = Lang.T("set_shut_btn");
+            cancelBtn.Text = Lang.T("set_shut_cancel");
+            rbId.Text = "Bahasa Indonesia";
+            rbEn.Text = "English";
+            rbId.Checked = Lang.Code != "en";
+            rbEn.Checked = Lang.Code == "en";
+            applying = false;
+            UpdateShutdownStatus();
+        }
+
+        void UpdateShutdownStatus()
+        {
+            bool active = main.ShutdownTarget != DateTime.MinValue && main.ShutdownTarget > DateTime.Now;
+            if (!active && main.ShutdownTarget != DateTime.MinValue && main.ShutdownTarget <= DateTime.Now)
+            {
+                main.ShutdownTarget = DateTime.MinValue;
+                main.SaveNow();
+            }
+            if (active)
+            {
+                shutStatus.ForeColor = Ui.Ready;
+                shutStatus.Text = Lang.T("set_shut_on", MainCountdown(main.ShutdownTarget - DateTime.Now));
+            }
+            else
+            {
+                shutStatus.ForeColor = Ui.Hint;
+                shutStatus.Text = Lang.T("set_shut_off");
+            }
+            cancelBtn.Enabled = active;
+        }
+
+        static string MainCountdown(TimeSpan t)
+        {
+            if (t < TimeSpan.Zero) t = TimeSpan.Zero;
+            if (t.TotalHours >= 1)
+                return ((int)t.TotalHours).ToString("00", CultureInfo.InvariantCulture) + ":" + t.Minutes.ToString("00", CultureInfo.InvariantCulture) + ":" + t.Seconds.ToString("00", CultureInfo.InvariantCulture);
+            return t.Minutes.ToString("00", CultureInfo.InvariantCulture) + ":" + t.Seconds.ToString("00", CultureInfo.InvariantCulture);
+        }
+
+        protected override void OnFormClosed(FormClosedEventArgs e)
+        {
+            base.OnFormClosed(e);
+            main.NotifySettingsClosed();
+        }
+    }
+
     class StickyForm : Form
     {
         const int MaxRows = 10;
@@ -224,6 +623,9 @@ namespace StickyCountdown
         int fieldChangedAt;
         bool applying;
         bool pulseFlip;
+        SettingsForm settingsForm;
+
+        public DateTime ShutdownTarget = DateTime.MinValue;
 
         Label titleLabel;
         Label compactTimeLabel;
@@ -231,6 +633,7 @@ namespace StickyCountdown
         Label hintLabel;
         RoundButton closeBtn;
         RoundButton minBtn;
+        RoundButton gearBtn;
         RoundButton expandBtn;
         RoundButton addBtn;
         RoundedPanel notesHost;
@@ -417,13 +820,22 @@ namespace StickyCountdown
             minBtn.FlatAppearance.MouseDownBackColor = Ui.BtnDown;
             minBtn.Click += delegate(object s, EventArgs e) { Collapse(); };
 
+            gearBtn = MakeButton("\u2699", 12);
+            gearBtn.Font = new Font("Segoe UI Symbol", 10f);
+            gearBtn.ForeColor = Ui.CloseText;
+            gearBtn.BackColor = Ui.Card;
+            gearBtn.FlatAppearance.BorderSize = 0;
+            gearBtn.FlatAppearance.MouseOverBackColor = Ui.BtnHover;
+            gearBtn.FlatAppearance.MouseDownBackColor = Ui.BtnDown;
+            gearBtn.Click += delegate(object s, EventArgs e) { OpenSettings(); };
+
             expandBtn = MakeButton("\u25A1", 10);
             expandBtn.Font = new Font("Segoe UI", 10f);
             expandBtn.ForeColor = Ui.BtnText;
             expandBtn.Visible = false;
             expandBtn.Click += delegate(object s, EventArgs e) { Expand(); };
 
-            addBtn = MakeButton("+  Tambah model", 10);
+            addBtn = MakeButton("", 10);
             addBtn.Font = new Font("Segoe UI", 9.5f);
             addBtn.Click += delegate(object s, EventArgs e) { AddRow(null, true); };
 
@@ -433,7 +845,6 @@ namespace StickyCountdown
             catLabel.ForeColor = Ui.Hint;
             catLabel.Font = new Font("Segoe UI Semibold", 7.5f);
             catLabel.TextAlign = ContentAlignment.MiddleLeft;
-            catLabel.Text = "CATATAN";
             catLabel.Cursor = Cursors.SizeAll;
 
             hintLabel = new Label();
@@ -442,7 +853,6 @@ namespace StickyCountdown
             hintLabel.ForeColor = Ui.Hint;
             hintLabel.Font = new Font("Segoe UI", 7.5f);
             hintLabel.TextAlign = ContentAlignment.MiddleRight;
-            hintLabel.Text = "klik kanan baris = atur reset";
             hintLabel.Cursor = Cursors.SizeAll;
 
             notesHost = new RoundedPanel();
@@ -465,6 +875,7 @@ namespace StickyCountdown
             Controls.Add(compactTimeLabel);
             Controls.Add(closeBtn);
             Controls.Add(minBtn);
+            Controls.Add(gearBtn);
             Controls.Add(expandBtn);
             Controls.Add(addBtn);
             Controls.Add(catLabel);
@@ -475,6 +886,10 @@ namespace StickyCountdown
 
             titleLabel.ContextMenuStrip = globalMenu;
             compactTimeLabel.ContextMenuStrip = globalMenu;
+            compactTimeLabel.MouseUp += delegate(object s, MouseEventArgs e)
+            {
+                if (e.Button == MouseButtons.Right) globalMenu.Show(Cursor.Position);
+            };
             catLabel.ContextMenuStrip = globalMenu;
             hintLabel.ContextMenuStrip = globalMenu;
 
@@ -484,16 +899,11 @@ namespace StickyCountdown
             AttachDrag(this);
 
             titleLabel.DoubleClick += delegate(object s, EventArgs e) { Collapse(); };
-            compactTimeLabel.DoubleClick += delegate(object s, EventArgs e) { Expand(); };
-
-            tip.SetToolTip(titleLabel, "Drag: pindah \u2022 Klik 2x: perkecil \u2022 Klik kanan: menu");
-            tip.SetToolTip(minBtn, "Perkecil");
-            tip.SetToolTip(expandBtn, "Buka lagi");
-            tip.SetToolTip(addBtn, "Tambah baris model baru");
-            tip.SetToolTip(notesHost, "Catatan bebas: jam pakai ideal, info harga per jam, dll.");
 
             foreach (Row r in rows)
                 AttachRow(r);
+
+            TranslateUi();
         }
 
         RoundButton MakeButton(string text, int radius)
@@ -514,17 +924,20 @@ namespace StickyCountdown
         {
             globalMenu = new ContextMenuStrip();
 
-            ToolStripMenuItem miAdd = new ToolStripMenuItem("Tambah model");
+            ToolStripMenuItem miAdd = new ToolStripMenuItem();
             miAdd.Click += delegate(object s, EventArgs e) { AddRow(null, true); };
 
-            miCompact = new ToolStripMenuItem("Perkecil");
+            ToolStripMenuItem miSettings = new ToolStripMenuItem();
+            miSettings.Click += delegate(object s, EventArgs e) { OpenSettings(); };
+
+            miCompact = new ToolStripMenuItem();
             miCompact.Click += delegate(object s, EventArgs e)
             {
                 if (compact) Expand();
                 else Collapse();
             };
 
-            miTopMost = new ToolStripMenuItem("Selalu di atas");
+            miTopMost = new ToolStripMenuItem();
             miTopMost.CheckOnClick = true;
             miTopMost.CheckedChanged += delegate(object s, EventArgs e)
             {
@@ -535,20 +948,25 @@ namespace StickyCountdown
                 SaveSettings();
             };
 
-            ToolStripMenuItem miExit = new ToolStripMenuItem("Keluar");
+            ToolStripMenuItem miExit = new ToolStripMenuItem();
             miExit.Click += delegate(object s, EventArgs e) { Close(); };
 
             globalMenu.Items.Add(miAdd);
+            globalMenu.Items.Add(miSettings);
             globalMenu.Items.Add(miCompact);
             globalMenu.Items.Add(miTopMost);
             globalMenu.Items.Add(new ToolStripSeparator());
             globalMenu.Items.Add(miExit);
             globalMenu.Opening += delegate(object s, System.ComponentModel.CancelEventArgs e)
             {
+                miAdd.Text = Lang.T("m_add");
+                miSettings.Text = Lang.T("m_settings");
+                miCompact.Text = compact ? Lang.T("m_expand") : Lang.T("m_shrink");
+                miTopMost.Text = Lang.T("m_top");
+                miExit.Text = Lang.T("m_exit");
                 applying = true;
                 miTopMost.Checked = topMostOn;
                 applying = false;
-                miCompact.Text = compact ? "Buka" : "Perkecil";
                 UpdateMinimizeState();
             };
 
@@ -585,13 +1003,13 @@ namespace StickyCountdown
 
             r.DoneBtn = new RoundButton();
             r.DoneBtn.Radius = S(8);
-            r.DoneBtn.Text = "Done";
             r.DoneBtn.Font = new Font("Segoe UI Semibold", 8.5f);
             r.DoneBtn.BackColor = Ui.DoneFill;
             r.DoneBtn.ForeColor = Ui.Ready;
             r.DoneBtn.FlatAppearance.BorderSize = 0;
             r.DoneBtn.FlatAppearance.MouseOverBackColor = Ui.DoneHover;
             r.DoneBtn.FlatAppearance.MouseDownBackColor = Ui.DoneHover;
+            r.DoneBtn.Text = Lang.T("done");
             r.DoneBtn.Visible = false;
             r.DoneBtn.Click += delegate(object s, EventArgs e) { MarkDone(r); };
 
@@ -627,7 +1045,7 @@ namespace StickyCountdown
             BuildRowStrip(r);
             Controls.Add(r.Host);
 
-            try { SendMessage(r.NameBox.Handle, EM_SETCUEBANNER, (IntPtr)1, "Nama model"); }
+            try { SendMessage(r.NameBox.Handle, EM_SETCUEBANNER, (IntPtr)1, Lang.T("cue_model")); }
             catch { }
 
             return r;
@@ -642,37 +1060,37 @@ namespace StickyCountdown
                 strip.Items.Clear();
 
                 string current;
-                if (r.Ready) current = "Status: SIAP dipakai lagi";
-                else if (r.Mode == "hours") current = "Countdown " + r.Hours.ToString("0.##", CultureInfo.InvariantCulture) + " jam";
-                else if (r.Mode == "until") current = "Sampai jam " + r.UntilText;
-                else current = "Belum diatur";
+                if (r.Ready) current = Lang.T("st_ready");
+                else if (r.Mode == "hours") current = Lang.T("st_count", r.Hours.ToString("0.##", CultureInfo.InvariantCulture));
+                else if (r.Mode == "until") current = Lang.T("st_until", r.UntilText);
+                else current = Lang.T("st_none");
                 ToolStripMenuItem miInfo = new ToolStripMenuItem(current);
                 miInfo.Enabled = false;
                 strip.Items.Add(miInfo);
                 strip.Items.Add(new ToolStripSeparator());
 
-                ToolStripMenuItem miHours = new ToolStripMenuItem("Hitung mundur ... jam");
+                ToolStripMenuItem miHours = new ToolStripMenuItem(Lang.T("m_hours"));
                 miHours.Click += delegate(object s2, EventArgs e2) { PromptSetHours(r); };
-                ToolStripMenuItem miUntil = new ToolStripMenuItem("Sampai jam ...");
+                ToolStripMenuItem miUntil = new ToolStripMenuItem(Lang.T("m_until"));
                 miUntil.Click += delegate(object s2, EventArgs e2) { PromptSetUntil(r); };
                 strip.Items.Add(miHours);
                 strip.Items.Add(miUntil);
 
                 if (r.Ready)
                 {
-                    ToolStripMenuItem miDone = new ToolStripMenuItem("Tandai selesai (Done)");
+                    ToolStripMenuItem miDone = new ToolStripMenuItem(Lang.T("m_markdone"));
                     miDone.Click += delegate(object s2, EventArgs e2) { MarkDone(r); };
                     strip.Items.Add(miDone);
                 }
                 else if (r.Mode != "none")
                 {
-                    ToolStripMenuItem miClear = new ToolStripMenuItem("Bersihkan");
+                    ToolStripMenuItem miClear = new ToolStripMenuItem(Lang.T("m_clear"));
                     miClear.Click += delegate(object s2, EventArgs e2) { ClearRow(r); };
                     strip.Items.Add(miClear);
                 }
 
                 strip.Items.Add(new ToolStripSeparator());
-                ToolStripMenuItem miDel = new ToolStripMenuItem("Hapus baris");
+                ToolStripMenuItem miDel = new ToolStripMenuItem(Lang.T("m_del"));
                 miDel.Enabled = rows.Count > 1;
                 miDel.Click += delegate(object s2, EventArgs e2) { RemoveRow(r); };
                 strip.Items.Add(miDel);
@@ -704,10 +1122,99 @@ namespace StickyCountdown
             r.TimeLabel.MouseLeave += leaveE;
             r.NameBox.MouseEnter += enterE;
             r.NameBox.MouseLeave += leaveE;
+        }
 
-            tip.SetToolTip(r.TimeLabel, "Klik untuk atur reset");
-            tip.SetToolTip(r.DoneBtn, "Klik kalau sudah selesai dipakai");
-            tip.SetToolTip(r.DelBtn, "Hapus baris ini");
+        void TranslateUi()
+        {
+            addBtn.Text = Lang.T("add_model");
+            catLabel.Text = Lang.T("notes");
+            hintLabel.Text = Lang.T("hint");
+            tip.SetToolTip(titleLabel, Lang.T("tip_title"));
+            tip.SetToolTip(gearBtn, Lang.T("tip_settings"));
+            tip.SetToolTip(expandBtn, Lang.T("tip_expand"));
+            tip.SetToolTip(addBtn, Lang.T("tip_add"));
+            tip.SetToolTip(notesHost, Lang.T("tip_notes"));
+            UpdateMinimizeState();
+            foreach (Row r in rows)
+            {
+                r.DoneBtn.Text = Lang.T("done");
+                try { SendMessage(r.NameBox.Handle, EM_SETCUEBANNER, (IntPtr)1, Lang.T("cue_model")); }
+                catch { }
+                tip.SetToolTip(r.TimeLabel, Lang.T("tip_time"));
+                tip.SetToolTip(r.DoneBtn, Lang.T("tip_done"));
+                tip.SetToolTip(r.DelBtn, Lang.T("tip_del"));
+            }
+            if (settingsForm != null && !settingsForm.IsDisposed)
+                settingsForm.TranslateUi();
+        }
+
+        public void SetLanguage(string code)
+        {
+            Lang.Code = code == "en" ? "en" : "id";
+            SaveSettings();
+            TranslateUi();
+        }
+
+        public void NotifySettingsClosed()
+        {
+            settingsForm = null;
+        }
+
+        void OpenSettings()
+        {
+            if (settingsForm != null && !settingsForm.IsDisposed)
+            {
+                settingsForm.Activate();
+                return;
+            }
+            settingsForm = new SettingsForm(this);
+            settingsForm.Show(this);
+        }
+
+        public void PromptShutdown()
+        {
+            string input = Interaction.InputBox(Lang.T("p_shut_text"), Lang.T("p_shut_title"), "60");
+            if (input == null || input.Trim().Length == 0) return;
+            int n;
+            if (!int.TryParse(input.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out n) || n < 1 || n > 1440)
+            {
+                MessageBox.Show(Lang.T("p_shut_err"), "Limit LLM", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            int code = Shut.Schedule(n * 60);
+            if (code == 0 || code == 1190)
+            {
+                ShutdownTarget = DateTime.Now.AddMinutes(n);
+                SaveSettings();
+            }
+            else
+            {
+                MessageBox.Show(Lang.T("err_shut_sched") + " (" + code + ")", "Limit LLM", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        public void CancelShutdown()
+        {
+            int code = Shut.Abort();
+            if (code == 0)
+            {
+                ShutdownTarget = DateTime.MinValue;
+                SaveSettings();
+            }
+            else if (code == 1116)
+            {
+                ShutdownTarget = DateTime.MinValue;
+                SaveSettings();
+            }
+            else
+            {
+                MessageBox.Show(Lang.T("err_shut_cancel") + " (" + code + ")", "Limit LLM", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        public void SaveNow()
+        {
+            SaveSettings();
         }
 
         void ApplyRowFill(Row r, Color fill)
@@ -789,6 +1296,7 @@ namespace StickyCountdown
             notesHost.Visible = !compact;
             closeBtn.Visible = !compact;
             minBtn.Visible = !compact;
+            gearBtn.Visible = !compact;
             expandBtn.Visible = compact;
             compactTimeLabel.Visible = compact;
             titleLabel.Font = new Font("Segoe UI Semibold", compact ? 10f : 11.5f);
@@ -808,10 +1316,10 @@ namespace StickyCountdown
             if (minBtn != null)
             {
                 minBtn.Enabled = !locked;
-                tip.SetToolTip(minBtn, locked ? "Selesaikan dulu (klik Done pada baris)" : "Perkecil");
+                tip.SetToolTip(minBtn, locked ? Lang.T("tip_min_locked") : Lang.T("tip_min"));
             }
-            if (globalMenu != null && globalMenu.Items.Count > 1)
-                ((ToolStripMenuItem)globalMenu.Items[1]).Enabled = !locked;
+            if (globalMenu != null && globalMenu.Items.Count > 2)
+                globalMenu.Items[2].Enabled = !locked;
             if (locked && compact) Expand();
         }
 
@@ -859,9 +1367,10 @@ namespace StickyCountdown
                 return;
             }
 
-            titleLabel.SetBounds(pad, S(10), w - pad * 2 - S(64), S(22));
+            titleLabel.SetBounds(pad, S(10), w - pad * 2 - S(92), S(22));
             closeBtn.SetBounds(w - pad - S(24), S(9), S(24), S(24));
             minBtn.SetBounds(w - pad - S(52), S(9), S(24), S(24));
+            gearBtn.SetBounds(w - pad - S(80), S(9), S(24), S(24));
 
             int hostW = w - pad * 2;
             int rowH = S(34);
@@ -1014,13 +1523,13 @@ namespace StickyCountdown
         void PromptSetHours(Row r)
         {
             string def = r.Mode == "hours" ? r.Hours.ToString("0.##", CultureInfo.InvariantCulture) : "5";
-            string input = Interaction.InputBox("Countdown berapa jam? (boleh desimal, contoh 5 atau 4.5)", "Hitung mundur", def);
+            string input = Interaction.InputBox(Lang.T("p_hours_text"), Lang.T("p_hours_title"), def);
             if (input == null || input.Trim().Length == 0) return;
             double n;
             string t = input.Trim().Replace(',', '.');
             if (!double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out n) || n < 0.1 || n > 168)
             {
-                MessageBox.Show("Masukkan angka jam antara 0.1 sampai 168.", "Limit LLM", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(Lang.T("p_hours_err"), "Limit LLM", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
             r.Mode = "hours";
@@ -1036,19 +1545,19 @@ namespace StickyCountdown
         void PromptSetUntil(Row r)
         {
             string def = r.Mode == "until" ? r.UntilText : "22:00";
-            string input = Interaction.InputBox("Sampai jam berapa? Format 24 jam, contoh 22:00", "Sampai jam", def);
+            string input = Interaction.InputBox(Lang.T("p_until_text"), Lang.T("p_until_title"), def);
             if (input == null || input.Trim().Length == 0) return;
             int hh, mm;
             if (!TryParseClock(input, out hh, out mm))
             {
-                MessageBox.Show("Format jam tidak valid. Contoh yang benar: 22:00 atau 5:30.", "Limit LLM", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(Lang.T("p_until_err"), "Limit LLM", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
             string nice = string.Format(CultureInfo.InvariantCulture, "{0:00}:{1:00}", hh, mm);
             DateTime t = DateTime.Today.AddHours(hh).AddMinutes(mm);
             if (t <= DateTime.Now)
             {
-                DialogResult dr = MessageBox.Show("Jam " + nice + " sudah lewat hari ini. Hitung ke besok jam " + nice + "?", "Limit LLM", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                DialogResult dr = MessageBox.Show(Lang.T("p_until_passed", nice), "Limit LLM", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
                 if (dr == DialogResult.No)
                 {
                     r.Mode = "until";
@@ -1205,8 +1714,15 @@ namespace StickyCountdown
 
             int count = 1;
             string v;
+            if (d.TryGetValue("lang", out v) && v.Trim() == "en") Lang.Code = "en";
             if (d.TryGetValue("topmost", out v)) topMostOn = v.Trim() == "1";
             if (d.TryGetValue("notes", out v)) notesText = Unesc(v);
+            if (d.TryGetValue("shutoff", out v))
+            {
+                DateTime t;
+                if (DateTime.TryParseExact(v.Trim(), "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.None, out t) && t > DateTime.Now)
+                    ShutdownTarget = t;
+            }
             if (d.TryGetValue("width", out v))
             {
                 int n;
@@ -1279,11 +1795,13 @@ namespace StickyCountdown
 
             StringBuilder sb = new StringBuilder();
             sb.Append("; Limit LLM settings - ubah lewat klik kanan pada baris\r\n");
+            sb.Append("lang=").Append(Lang.Code).Append("\r\n");
             sb.Append("topmost=").Append(topMostOn ? "1" : "0").Append("\r\n");
             sb.Append("x=").Append(Location.X.ToString(CultureInfo.InvariantCulture)).Append("\r\n");
             sb.Append("y=").Append(Location.Y.ToString(CultureInfo.InvariantCulture)).Append("\r\n");
             sb.Append("width=").Append(savedW.ToString(CultureInfo.InvariantCulture)).Append("\r\n");
             sb.Append("height=").Append(savedH.ToString(CultureInfo.InvariantCulture)).Append("\r\n");
+            sb.Append("shutoff=").Append(ShutdownTarget == DateTime.MinValue ? "" : ShutdownTarget.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)).Append("\r\n");
             sb.Append("notes=").Append(Esc(notesText)).Append("\r\n");
             sb.Append("count=").Append(rows.Count.ToString(CultureInfo.InvariantCulture)).Append("\r\n");
             for (int i = 0; i < rows.Count; i++)

@@ -15,6 +15,9 @@ Widget desktop ringan untuk melacak **countdown reset limit pemakaian model AI**
 - **Minimize ke pill mungil** — tombol **−** menyusutkan widget jadi pill kecil biar tidak menghalangi produktivitas, klik **□** untuk buka lagi
 - **Ukuran fleksibel** — seret tepi/sudut widget (ada grip di kanan bawah), ukuran tersimpan otomatis
 - **Bagian catatan** — tulis info bebas, misal jam pakai ideal atau harga model yang beda per jam (contoh: diskon DeepSeek di jam tertentu)
+- **Pengaturan (⚙)** — di dalamnya ada:
+  - **Bahasa** — Indonesia / English (langsung berubah tanpa restart)
+  - **Timer shutdown** — jadwalkan PC mati otomatis (misal 90 menit), **tersembunyi dari tampilan utama**. Tetap berjalan walau widget ditutup (pakai layanan shutdown bawaan Windows) dan bisa dibatalkan kapan saja
 - **Selalu di atas** bisa di-toggle (klik kanan area kosong)
 - Posisi, ukuran, isi, dan pengaturan tersimpan otomatis di `settings.ini`
 - **Tanpa install apa-apa** — pakai .NET Framework yang sudah ada di semua Windows 10/11
@@ -32,6 +35,7 @@ Saat countdown habis: baris berubah hijau + tombol **Done** muncul. Setelah klik
 Kontrol lain:
 
 - **−** (kanan atas) — perkecil jadi pill; **□** — buka lagi
+- **⚙** (kanan atas) — pengaturan: bahasa & timer shutdown
 - **×** (kanan atas) — keluar
 - **Drag header** — pindahkan widget
 - **Seret tepi / sudut kanan bawah** — ubah ukuran widget
