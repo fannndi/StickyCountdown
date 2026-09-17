@@ -35,6 +35,13 @@ namespace StickyCountdown
         public static readonly Color BtnBorder = Color.FromArgb(227, 231, 241);
         public static readonly Color CloseText = Color.FromArgb(106, 113, 134);
         public static readonly Color CloseHover = Color.FromArgb(240, 224, 226);
+        public static readonly Color DelHover = Color.FromArgb(247, 228, 228);
+        public static readonly Color DelHoverText = Color.FromArgb(192, 71, 71);
+        public static readonly Color DoneFill = Color.FromArgb(231, 247, 239);
+        public static readonly Color DoneHover = Color.FromArgb(213, 241, 228);
+        public static readonly Color PendingFillA = Color.FromArgb(234, 248, 240);
+        public static readonly Color PendingFillB = Color.FromArgb(246, 246, 251);
+        public static readonly Color Grip = Color.FromArgb(196, 203, 219);
 
         public static GraphicsPath Round(Rectangle r, int radius)
         {
@@ -148,6 +155,8 @@ namespace StickyCountdown
         public Dot StatusDot;
         public TextBox NameBox;
         public Label TimeLabel;
+        public RoundButton DoneBtn;
+        public RoundButton DelBtn;
         public ContextMenuStrip Strip;
         public string NameBoxText = "";
         public string Mode = "none";
@@ -155,12 +164,16 @@ namespace StickyCountdown
         public string UntilText = "22:00";
         public DateTime Target;
         public bool Ready;
+        public bool Pending;
+        public bool Hovered;
     }
 
     class StickyForm : Form
     {
         const int MaxRows = 10;
         const int EM_SETCUEBANNER = 0x1501;
+        const int WM_NCHITTEST = 0x0084;
+        const int WM_GETMINMAXINFO = 0x0024;
 
         const uint WM_NCLBUTTONDOWN = 0xA1;
         const int HTCAPTION = 2;
@@ -170,6 +183,18 @@ namespace StickyCountdown
         const uint SWP_NOMOVE = 0x0002;
         const uint SWP_NOACTIVATE = 0x0010;
 
+        [StructLayout(LayoutKind.Sequential)]
+        struct Pnt { public int X, Y; }
+        [StructLayout(LayoutKind.Sequential)]
+        struct MinMaxInfo
+        {
+            public Pnt Reserved;
+            public Pnt MaxSize;
+            public Pnt MaxPosition;
+            public Pnt MinTrackSize;
+            public Pnt MaxTrackSize;
+        }
+
         [DllImport("user32.dll")]
         private static extern bool ReleaseCapture();
         [DllImport("user32.dll")]
@@ -178,12 +203,19 @@ namespace StickyCountdown
         private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, string lParam);
         [DllImport("user32.dll")]
         private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
 
         readonly List<Row> rows = new List<Row>();
 
         bool topMostOn = true;
+        bool compact;
         bool hasPos;
         Point loadPos;
+        int savedW;
+        int savedH;
+        int minTrackW = 100;
+        int minTrackH = 100;
         float scale = 1f;
         string settingsPath;
         string fallbackSettingsPath;
@@ -191,16 +223,21 @@ namespace StickyCountdown
         bool fieldDirty;
         int fieldChangedAt;
         bool applying;
+        bool pulseFlip;
 
         Label titleLabel;
+        Label compactTimeLabel;
         Label catLabel;
         Label hintLabel;
         RoundButton closeBtn;
+        RoundButton minBtn;
+        RoundButton expandBtn;
         RoundButton addBtn;
         RoundedPanel notesHost;
         TextBox notesBox;
         ContextMenuStrip globalMenu;
         ToolStripMenuItem miTopMost;
+        ToolStripMenuItem miCompact;
         ToolTip tip;
         System.Windows.Forms.Timer tick;
         Font countFont;
@@ -240,6 +277,46 @@ namespace StickyCountdown
             SetWindowPos(Handle, new IntPtr(topMostOn ? HWND_TOPMOST : HWND_NOTOPMOST), 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
         }
 
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WM_GETMINMAXINFO)
+            {
+                MinMaxInfo mmi = (MinMaxInfo)Marshal.PtrToStructure(m.LParam, typeof(MinMaxInfo));
+                mmi.MinTrackSize.X = minTrackW;
+                mmi.MinTrackSize.Y = minTrackH;
+                Marshal.StructureToPtr(mmi, m.LParam, false);
+                return;
+            }
+            if (m.Msg == WM_NCHITTEST && !compact)
+            {
+                base.WndProc(ref m);
+                if ((int)m.Result == 1)
+                {
+                    int lp = unchecked((int)m.LParam.ToInt64());
+                    short sx = unchecked((short)(lp & 0xFFFF));
+                    short sy = unchecked((short)((lp >> 16) & 0xFFFF));
+                    Point p = PointToClient(new Point(sx, sy));
+                    int e = S(6);
+                    bool l = p.X < e;
+                    bool r = p.X >= ClientSize.Width - e;
+                    bool t = p.Y < e;
+                    bool b = p.Y >= ClientSize.Height - e;
+                    int hit = 0;
+                    if (b && r) hit = 17;
+                    else if (b && l) hit = 16;
+                    else if (t && l) hit = 13;
+                    else if (t && r) hit = 14;
+                    else if (l) hit = 10;
+                    else if (r) hit = 11;
+                    else if (t) hit = 12;
+                    else if (b) hit = 15;
+                    if (hit != 0) m.Result = (IntPtr)hit;
+                }
+                return;
+            }
+            base.WndProc(ref m);
+        }
+
         protected override void OnHandleCreated(EventArgs e)
         {
             base.OnHandleCreated(e);
@@ -266,6 +343,8 @@ namespace StickyCountdown
             Region = new Region(Ui.Round(new Rectangle(0, 0, Width, Height), S(14)));
             if (old != null) old.Dispose();
             LayoutAll();
+            fieldDirty = true;
+            fieldChangedAt = Environment.TickCount;
             Invalidate();
         }
 
@@ -280,8 +359,19 @@ namespace StickyCountdown
             using (GraphicsPath path = Ui.Round(new Rectangle(S(1), S(1), Width - S(3), Height - S(3)), S(13)))
                 g.DrawPath(pen, path);
 
-            using (Pen pen = new Pen(Ui.Separator, 1))
-                g.DrawLine(pen, S(14), S(40), Width - S(14), S(40));
+            if (!compact)
+            {
+                using (Pen pen = new Pen(Ui.Separator, 1))
+                    g.DrawLine(pen, S(14), S(40), Width - S(14), S(40));
+
+                using (Pen pen = new Pen(Ui.Grip, S(2)))
+                {
+                    int bx = Width - S(7);
+                    int by = Height - S(7);
+                    for (int i = 0; i < 3; i++)
+                        g.DrawLine(pen, bx - S(4 + i * 5), by, bx, by - S(4 + i * 5));
+                }
+            }
         }
 
         void BuildUi()
@@ -298,6 +388,17 @@ namespace StickyCountdown
             titleLabel.Text = "Limit LLM";
             titleLabel.Cursor = Cursors.SizeAll;
 
+            compactTimeLabel = new Label();
+            compactTimeLabel.AutoSize = false;
+            compactTimeLabel.BackColor = Color.Transparent;
+            compactTimeLabel.ForeColor = Ui.Count;
+            compactTimeLabel.Font = new Font("Consolas", 10.5f, FontStyle.Bold);
+            compactTimeLabel.TextAlign = ContentAlignment.MiddleRight;
+            compactTimeLabel.Cursor = Cursors.Hand;
+            compactTimeLabel.Text = "--:--:--";
+            compactTimeLabel.Visible = false;
+            compactTimeLabel.Click += delegate(object s, EventArgs e) { Expand(); };
+
             closeBtn = MakeButton("\u00D7", 12);
             closeBtn.Font = new Font("Segoe UI", 12f);
             closeBtn.ForeColor = Ui.CloseText;
@@ -306,6 +407,21 @@ namespace StickyCountdown
             closeBtn.FlatAppearance.MouseOverBackColor = Ui.CloseHover;
             closeBtn.FlatAppearance.MouseDownBackColor = Ui.CloseHover;
             closeBtn.Click += delegate(object s, EventArgs e) { Close(); };
+
+            minBtn = MakeButton("\u2013", 12);
+            minBtn.Font = new Font("Segoe UI", 11f);
+            minBtn.ForeColor = Ui.CloseText;
+            minBtn.BackColor = Ui.Card;
+            minBtn.FlatAppearance.BorderSize = 0;
+            minBtn.FlatAppearance.MouseOverBackColor = Ui.BtnHover;
+            minBtn.FlatAppearance.MouseDownBackColor = Ui.BtnDown;
+            minBtn.Click += delegate(object s, EventArgs e) { Collapse(); };
+
+            expandBtn = MakeButton("\u25A1", 10);
+            expandBtn.Font = new Font("Segoe UI", 10f);
+            expandBtn.ForeColor = Ui.BtnText;
+            expandBtn.Visible = false;
+            expandBtn.Click += delegate(object s, EventArgs e) { Expand(); };
 
             addBtn = MakeButton("+  Tambah model", 10);
             addBtn.Font = new Font("Segoe UI", 9.5f);
@@ -346,7 +462,10 @@ namespace StickyCountdown
             notesHost.Controls.Add(notesBox);
 
             Controls.Add(titleLabel);
+            Controls.Add(compactTimeLabel);
             Controls.Add(closeBtn);
+            Controls.Add(minBtn);
+            Controls.Add(expandBtn);
             Controls.Add(addBtn);
             Controls.Add(catLabel);
             Controls.Add(hintLabel);
@@ -354,12 +473,22 @@ namespace StickyCountdown
 
             BuildGlobalMenu();
 
+            titleLabel.ContextMenuStrip = globalMenu;
+            compactTimeLabel.ContextMenuStrip = globalMenu;
+            catLabel.ContextMenuStrip = globalMenu;
+            hintLabel.ContextMenuStrip = globalMenu;
+
             AttachDrag(titleLabel);
             AttachDrag(catLabel);
             AttachDrag(hintLabel);
             AttachDrag(this);
 
-            tip.SetToolTip(titleLabel, "Drag: pindah \u2022 Klik kanan: menu");
+            titleLabel.DoubleClick += delegate(object s, EventArgs e) { Collapse(); };
+            compactTimeLabel.DoubleClick += delegate(object s, EventArgs e) { Expand(); };
+
+            tip.SetToolTip(titleLabel, "Drag: pindah \u2022 Klik 2x: perkecil \u2022 Klik kanan: menu");
+            tip.SetToolTip(minBtn, "Perkecil");
+            tip.SetToolTip(expandBtn, "Buka lagi");
             tip.SetToolTip(addBtn, "Tambah baris model baru");
             tip.SetToolTip(notesHost, "Catatan bebas: jam pakai ideal, info harga per jam, dll.");
 
@@ -388,6 +517,13 @@ namespace StickyCountdown
             ToolStripMenuItem miAdd = new ToolStripMenuItem("Tambah model");
             miAdd.Click += delegate(object s, EventArgs e) { AddRow(null, true); };
 
+            miCompact = new ToolStripMenuItem("Perkecil");
+            miCompact.Click += delegate(object s, EventArgs e)
+            {
+                if (compact) Expand();
+                else Collapse();
+            };
+
             miTopMost = new ToolStripMenuItem("Selalu di atas");
             miTopMost.CheckOnClick = true;
             miTopMost.CheckedChanged += delegate(object s, EventArgs e)
@@ -403,6 +539,7 @@ namespace StickyCountdown
             miExit.Click += delegate(object s, EventArgs e) { Close(); };
 
             globalMenu.Items.Add(miAdd);
+            globalMenu.Items.Add(miCompact);
             globalMenu.Items.Add(miTopMost);
             globalMenu.Items.Add(new ToolStripSeparator());
             globalMenu.Items.Add(miExit);
@@ -411,6 +548,8 @@ namespace StickyCountdown
                 applying = true;
                 miTopMost.Checked = topMostOn;
                 applying = false;
+                miCompact.Text = compact ? "Buka" : "Perkecil";
+                UpdateMinimizeState();
             };
 
             ContextMenuStrip = globalMenu;
@@ -444,6 +583,31 @@ namespace StickyCountdown
             r.TimeLabel.Cursor = Cursors.Hand;
             r.TimeLabel.Text = "--:--:--";
 
+            r.DoneBtn = new RoundButton();
+            r.DoneBtn.Radius = S(8);
+            r.DoneBtn.Text = "Done";
+            r.DoneBtn.Font = new Font("Segoe UI Semibold", 8.5f);
+            r.DoneBtn.BackColor = Ui.DoneFill;
+            r.DoneBtn.ForeColor = Ui.Ready;
+            r.DoneBtn.FlatAppearance.BorderSize = 0;
+            r.DoneBtn.FlatAppearance.MouseOverBackColor = Ui.DoneHover;
+            r.DoneBtn.FlatAppearance.MouseDownBackColor = Ui.DoneHover;
+            r.DoneBtn.Visible = false;
+            r.DoneBtn.Click += delegate(object s, EventArgs e) { MarkDone(r); };
+
+            r.DelBtn = new RoundButton();
+            r.DelBtn.Radius = S(11);
+            r.DelBtn.Text = "\u00D7";
+            r.DelBtn.Font = new Font("Segoe UI", 9f);
+            r.DelBtn.ForeColor = Ui.Hint;
+            r.DelBtn.BackColor = Ui.RowFill;
+            r.DelBtn.FlatAppearance.BorderSize = 0;
+            r.DelBtn.FlatAppearance.MouseOverBackColor = Ui.DelHover;
+            r.DelBtn.FlatAppearance.MouseDownBackColor = Ui.DelHover;
+            r.DelBtn.Click += delegate(object s, EventArgs e) { RemoveRow(r); };
+            r.DelBtn.MouseEnter += delegate(object s, EventArgs e) { r.DelBtn.ForeColor = Ui.DelHoverText; };
+            r.DelBtn.MouseLeave += delegate(object s, EventArgs e) { r.DelBtn.ForeColor = Ui.Hint; };
+
             if (source != null)
             {
                 r.Mode = source.Mode;
@@ -457,6 +621,8 @@ namespace StickyCountdown
             r.Host.Controls.Add(r.StatusDot);
             r.Host.Controls.Add(r.NameBox);
             r.Host.Controls.Add(r.TimeLabel);
+            r.Host.Controls.Add(r.DoneBtn);
+            r.Host.Controls.Add(r.DelBtn);
 
             BuildRowStrip(r);
             Controls.Add(r.Host);
@@ -492,7 +658,13 @@ namespace StickyCountdown
                 strip.Items.Add(miHours);
                 strip.Items.Add(miUntil);
 
-                if (r.Mode != "none" || r.Ready)
+                if (r.Ready)
+                {
+                    ToolStripMenuItem miDone = new ToolStripMenuItem("Tandai selesai (Done)");
+                    miDone.Click += delegate(object s2, EventArgs e2) { MarkDone(r); };
+                    strip.Items.Add(miDone);
+                }
+                else if (r.Mode != "none")
                 {
                     ToolStripMenuItem miClear = new ToolStripMenuItem("Bersihkan");
                     miClear.Click += delegate(object s2, EventArgs e2) { ClearRow(r); };
@@ -513,6 +685,8 @@ namespace StickyCountdown
             r.StatusDot.ContextMenuStrip = r.Strip;
             r.NameBox.ContextMenuStrip = r.Strip;
             r.TimeLabel.ContextMenuStrip = r.Strip;
+            r.DoneBtn.ContextMenuStrip = r.Strip;
+            r.DelBtn.ContextMenuStrip = r.Strip;
 
             r.TimeLabel.MouseUp += delegate(object s, MouseEventArgs e)
             {
@@ -520,7 +694,6 @@ namespace StickyCountdown
                     r.Strip.Show(Cursor.Position);
             };
 
-            MouseEventHandler enter = delegate(object s, MouseEventArgs e) { SetRowHover(r, true); };
             EventHandler enterE = delegate(object s, EventArgs e) { SetRowHover(r, true); };
             EventHandler leaveE = delegate(object s, EventArgs e) { SetRowHover(r, false); };
             r.Host.MouseEnter += enterE;
@@ -533,16 +706,25 @@ namespace StickyCountdown
             r.NameBox.MouseLeave += leaveE;
 
             tip.SetToolTip(r.TimeLabel, "Klik untuk atur reset");
+            tip.SetToolTip(r.DoneBtn, "Klik kalau sudah selesai dipakai");
+            tip.SetToolTip(r.DelBtn, "Hapus baris ini");
         }
 
-        void SetRowHover(Row r, bool on)
+        void ApplyRowFill(Row r, Color fill)
         {
-            Color fill = on ? Ui.RowHover : Ui.RowFill;
             r.Host.FillColor = fill;
             r.Host.Invalidate();
             r.StatusDot.BackColor = fill;
             r.StatusDot.Invalidate();
             r.NameBox.BackColor = fill;
+            r.DelBtn.BackColor = fill;
+        }
+
+        void SetRowHover(Row r, bool on)
+        {
+            r.Hovered = on;
+            if (r.Pending) return;
+            ApplyRowFill(r, on ? Ui.RowHover : Ui.RowFill);
         }
 
         void AddRow(Row source, bool save)
@@ -553,6 +735,7 @@ namespace StickyCountdown
             AttachRow(r);
             LayoutAll();
             RefreshRow(r);
+            UpdateMinimizeState();
             if (save) SaveSettings();
         }
 
@@ -564,17 +747,121 @@ namespace StickyCountdown
             if (r.Strip != null) r.Strip.Dispose();
             rows.Remove(r);
             LayoutAll();
+            UpdateMinimizeState();
             SaveSettings();
+        }
+
+        void Collapse()
+        {
+            if (compact) return;
+            if (AnyPending()) return;
+            compact = true;
+            minTrackW = S(210);
+            minTrackH = S(36);
+            SetCompactUi();
+            ClientSize = new Size(S(210), S(36));
+            LayoutAll();
+            Invalidate(true);
+        }
+
+        void Expand()
+        {
+            if (!compact) return;
+            compact = false;
+            SetCompactUi();
+            int w = savedW > 0 ? savedW : S(340);
+            int h = savedH > 0 ? savedH : S(400);
+            minTrackW = S(300);
+            minTrackH = S(150);
+            ClientSize = new Size(w, h);
+            LayoutAll();
+            ApplyTopMost();
+            Invalidate(true);
+        }
+
+        void SetCompactUi()
+        {
+            foreach (Row r in rows)
+                r.Host.Visible = !compact;
+            addBtn.Visible = !compact;
+            catLabel.Visible = !compact;
+            hintLabel.Visible = !compact;
+            notesHost.Visible = !compact;
+            closeBtn.Visible = !compact;
+            minBtn.Visible = !compact;
+            expandBtn.Visible = compact;
+            compactTimeLabel.Visible = compact;
+            titleLabel.Font = new Font("Segoe UI Semibold", compact ? 10f : 11.5f);
+            if (!compact) UpdateCompactLabel();
+        }
+
+        bool AnyPending()
+        {
+            foreach (Row r in rows)
+                if (r.Pending) return true;
+            return false;
+        }
+
+        void UpdateMinimizeState()
+        {
+            bool locked = AnyPending();
+            if (minBtn != null)
+            {
+                minBtn.Enabled = !locked;
+                tip.SetToolTip(minBtn, locked ? "Selesaikan dulu (klik Done pada baris)" : "Perkecil");
+            }
+            if (globalMenu != null && globalMenu.Items.Count > 1)
+                ((ToolStripMenuItem)globalMenu.Items[1]).Enabled = !locked;
+            if (locked && compact) Expand();
+        }
+
+        void UpdateCompactLabel()
+        {
+            if (!compact) return;
+            if (AnyPending())
+            {
+                compactTimeLabel.Text = "SIAP";
+                compactTimeLabel.ForeColor = Ui.Ready;
+                return;
+            }
+            TimeSpan best = TimeSpan.MaxValue;
+            bool found = false;
+            foreach (Row r in rows)
+            {
+                if (r.Mode == "none" || r.Ready) continue;
+                TimeSpan rem = r.Target - DateTime.Now;
+                if (rem < best) { best = rem; found = true; }
+            }
+            compactTimeLabel.Text = found ? FormatRemaining(best) : "--:--:--";
+            compactTimeLabel.ForeColor = Ui.Count;
         }
 
         void LayoutAll()
         {
             if (titleLabel == null) return;
-            int pad = S(12);
-            int w = S(340);
 
-            titleLabel.SetBounds(pad, S(10), w - pad * 2 - S(34), S(22));
+            if (compact)
+            {
+                int cw = ClientSize.Width;
+                titleLabel.SetBounds(S(12), S(7), S(80), S(22));
+                compactTimeLabel.SetBounds(S(96), S(7), cw - S(96) - S(34), S(22));
+                expandBtn.SetBounds(cw - S(24) - S(10), S(6), S(24), S(24));
+                minTrackW = cw;
+                minTrackH = ClientSize.Height;
+                return;
+            }
+
+            int pad = S(12);
+            int w = Math.Max(S(300), ClientSize.Width);
+            if (ClientSize.Width != w)
+            {
+                ClientSize = new Size(w, ClientSize.Height);
+                return;
+            }
+
+            titleLabel.SetBounds(pad, S(10), w - pad * 2 - S(64), S(22));
             closeBtn.SetBounds(w - pad - S(24), S(9), S(24), S(24));
+            minBtn.SetBounds(w - pad - S(52), S(9), S(24), S(24));
 
             int hostW = w - pad * 2;
             int rowH = S(34);
@@ -585,9 +872,19 @@ namespace StickyCountdown
                 Row r = rows[i];
                 r.Host.Radius = S(10);
                 r.Host.SetBounds(pad, y, hostW, rowH);
+
+                int nameW = Math.Max(S(60), hostW - S(164));
                 r.StatusDot.SetBounds(S(11), S(13), S(8), S(8));
-                r.NameBox.SetBounds(S(28), S(5), S(150), S(24));
-                r.TimeLabel.SetBounds(S(184), 0, hostW - S(194), rowH);
+                r.NameBox.SetBounds(S(28), S(5), nameW, S(24));
+                int timeX = S(28) + nameW + S(8);
+                int timeW = hostW - timeX - S(32);
+                r.TimeLabel.SetBounds(timeX, 0, timeW, rowH);
+                r.DoneBtn.Radius = S(8);
+                r.DoneBtn.SetBounds(timeX, S(5), timeW, S(24));
+                r.DelBtn.Radius = S(11);
+                r.DelBtn.SetBounds(hostW - S(28), S(6), S(22), S(22));
+                r.DelBtn.Enabled = rows.Count > 1;
+
                 y += rowStep;
             }
 
@@ -600,24 +897,40 @@ namespace StickyCountdown
             hintLabel.SetBounds(w - pad - S(170), catY, S(170), S(12));
 
             int notesY = catY + S(16);
-            notesHost.SetBounds(pad, notesY, hostW, S(64));
-            notesBox.SetBounds(S(9), S(7), hostW - S(18), S(50));
+            int minH = notesY + S(64) + S(12);
+            minTrackW = S(300);
+            minTrackH = minH;
 
-            int newH = notesY + S(64) + S(12);
-            if (ClientSize.Height != newH || ClientSize.Width != w)
-                ClientSize = new Size(w, newH);
+            int H = Math.Max(ClientSize.Height, minH);
+            if (ClientSize.Height != H)
+            {
+                ClientSize = new Size(w, H);
+                return;
+            }
+
+            int notesH = H - notesY - S(12);
+            notesHost.SetBounds(pad, notesY, hostW, notesH);
+            notesBox.SetBounds(S(9), S(7), hostW - S(18), notesH - S(14));
+
+            savedW = w;
+            savedH = H;
         }
 
         void RefreshRow(Row r)
         {
             if (r.Ready)
             {
-                r.TimeLabel.Text = "SIAP";
-                r.TimeLabel.ForeColor = Ui.Ready;
+                r.TimeLabel.Visible = false;
+                r.DoneBtn.Visible = true;
                 r.StatusDot.DotColor = Ui.DotReady;
                 r.StatusDot.Invalidate();
+                ApplyRowFill(r, r.Pending ? Ui.PendingFillA : (r.Hovered ? Ui.RowHover : Ui.RowFill));
                 return;
             }
+
+            r.TimeLabel.Visible = true;
+            r.DoneBtn.Visible = false;
+
             if (r.Mode == "none")
             {
                 r.TimeLabel.Text = "--:--:--";
@@ -626,27 +939,70 @@ namespace StickyCountdown
                 r.StatusDot.Invalidate();
                 return;
             }
+
             TimeSpan rem = r.Target - DateTime.Now;
             if (rem <= TimeSpan.Zero)
             {
                 r.Ready = true;
-                r.TimeLabel.Text = "SIAP";
-                r.TimeLabel.ForeColor = Ui.Ready;
+                r.Pending = true;
+                r.TimeLabel.Visible = false;
+                r.DoneBtn.Visible = true;
                 r.StatusDot.DotColor = Ui.DotReady;
                 r.StatusDot.Invalidate();
-                SaveSettings();
+                ApplyRowFill(r, Ui.PendingFillA);
+                OnRowFinished(r);
                 return;
             }
+
             r.TimeLabel.Text = FormatRemaining(rem);
             r.TimeLabel.ForeColor = Ui.Count;
             r.StatusDot.DotColor = Ui.DotCounting;
             r.StatusDot.Invalidate();
         }
 
+        void OnRowFinished(Row r)
+        {
+            if (compact) Expand();
+            SetForegroundWindow(Handle);
+            ApplyTopMost();
+            UpdateMinimizeState();
+            SaveSettings();
+        }
+
+        void MarkDone(Row r)
+        {
+            r.Ready = false;
+            r.Pending = false;
+            r.Mode = "none";
+            r.Target = DateTime.MinValue;
+            RefreshRow(r);
+            UpdateMinimizeState();
+            UpdateCompactLabel();
+            SaveSettings();
+        }
+
+        void ClearRow(Row r)
+        {
+            r.Mode = "none";
+            r.Ready = false;
+            r.Pending = false;
+            r.Target = DateTime.MinValue;
+            RefreshRow(r);
+            UpdateMinimizeState();
+            SaveSettings();
+        }
+
         void OnTick(object s, EventArgs e)
         {
+            pulseFlip = !pulseFlip;
             foreach (Row r in rows)
+            {
                 RefreshRow(r);
+                if (r.Pending)
+                    ApplyRowFill(r, pulseFlip ? Ui.PendingFillA : Ui.PendingFillB);
+            }
+
+            UpdateCompactLabel();
 
             if (fieldDirty && Environment.TickCount - fieldChangedAt > 3000)
             {
@@ -671,7 +1027,9 @@ namespace StickyCountdown
             r.Hours = n;
             r.Target = DateTime.Now.AddHours(n);
             r.Ready = false;
+            r.Pending = false;
             RefreshRow(r);
+            UpdateMinimizeState();
             SaveSettings();
         }
 
@@ -696,6 +1054,7 @@ namespace StickyCountdown
                     r.Mode = "until";
                     r.UntilText = nice;
                     r.Ready = true;
+                    r.Pending = false;
                     RefreshRow(r);
                     SaveSettings();
                     return;
@@ -706,16 +1065,9 @@ namespace StickyCountdown
             r.UntilText = nice;
             r.Target = t;
             r.Ready = false;
+            r.Pending = false;
             RefreshRow(r);
-            SaveSettings();
-        }
-
-        void ClearRow(Row r)
-        {
-            r.Mode = "none";
-            r.Ready = false;
-            r.Target = DateTime.MinValue;
-            RefreshRow(r);
+            UpdateMinimizeState();
             SaveSettings();
         }
 
@@ -753,6 +1105,7 @@ namespace StickyCountdown
             applying = false;
 
             notesBox.Text = notesText;
+            ClientSize = new Size(savedW > 0 ? savedW : S(340), savedH > 0 ? savedH : S(260));
             LayoutAll();
             if (hasPos && IsOnScreen(loadPos))
                 Location = loadPos;
@@ -761,6 +1114,8 @@ namespace StickyCountdown
 
             foreach (Row r in rows)
                 RefreshRow(r);
+            UpdateMinimizeState();
+            UpdateCompactLabel();
 
             applying = true;
             miTopMost.Checked = topMostOn;
@@ -826,10 +1181,9 @@ namespace StickyCountdown
             if (!File.Exists(settingsPath) && File.Exists(fallbackSettingsPath))
                 settingsPath = fallbackSettingsPath;
 
-            int count = 3;
             if (!File.Exists(settingsPath))
             {
-                for (int i = 0; i < count; i++) AddRow(null, false);
+                AddRow(null, false);
                 return;
             }
 
@@ -849,9 +1203,20 @@ namespace StickyCountdown
             }
             catch { }
 
+            int count = 1;
             string v;
             if (d.TryGetValue("topmost", out v)) topMostOn = v.Trim() == "1";
             if (d.TryGetValue("notes", out v)) notesText = Unesc(v);
+            if (d.TryGetValue("width", out v))
+            {
+                int n;
+                if (int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out n) && n >= 200 && n <= 2000) savedW = n;
+            }
+            if (d.TryGetValue("height", out v))
+            {
+                int n;
+                if (int.TryParse(v, NumberStyles.Integer, CultureInfo.InvariantCulture, out n) && n >= 150 && n <= 2000) savedH = n;
+            }
             if (d.TryGetValue("x", out v))
             {
                 int x;
@@ -903,9 +1268,7 @@ namespace StickyCountdown
             }
 
             if (rows.Count == 0)
-            {
-                for (int i = 0; i < 3; i++) AddRow(null, false);
-            }
+                AddRow(null, false);
         }
 
         void SaveSettings()
@@ -919,6 +1282,8 @@ namespace StickyCountdown
             sb.Append("topmost=").Append(topMostOn ? "1" : "0").Append("\r\n");
             sb.Append("x=").Append(Location.X.ToString(CultureInfo.InvariantCulture)).Append("\r\n");
             sb.Append("y=").Append(Location.Y.ToString(CultureInfo.InvariantCulture)).Append("\r\n");
+            sb.Append("width=").Append(savedW.ToString(CultureInfo.InvariantCulture)).Append("\r\n");
+            sb.Append("height=").Append(savedH.ToString(CultureInfo.InvariantCulture)).Append("\r\n");
             sb.Append("notes=").Append(Esc(notesText)).Append("\r\n");
             sb.Append("count=").Append(rows.Count.ToString(CultureInfo.InvariantCulture)).Append("\r\n");
             for (int i = 0; i < rows.Count; i++)
@@ -957,4 +1322,3 @@ namespace StickyCountdown
         }
     }
 }
-
