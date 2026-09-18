@@ -9,6 +9,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
 using Microsoft.VisualBasic;
+using Microsoft.Win32;
 
 namespace StickyCountdown
 {
@@ -82,7 +83,7 @@ namespace StickyCountdown
             Set("hint", "klik kanan baris = atur reset", "right-click a row to set reset");
             Set("done", "Done", "Done");
             Set("tip_title", "Drag: pindah \u2022 Klik 2x: perkecil \u2022 Klik kanan: menu", "Drag: move \u2022 Double-click: minimize \u2022 Right-click: menu");
-            Set("tip_min", "Perkecil", "Minimize");
+            Set("tip_min", "Sembunyikan ke tray", "Hide to tray");
             Set("tip_min_locked", "Selesaikan dulu (klik Done pada baris)", "Finish first (click Done on the row)");
             Set("tip_expand", "Buka lagi", "Expand again");
             Set("tip_settings", "Pengaturan", "Settings");
@@ -94,6 +95,8 @@ namespace StickyCountdown
             Set("m_add", "Tambah model", "Add model");
             Set("m_settings", "Pengaturan", "Settings");
             Set("m_shrink", "Perkecil", "Minimize");
+            Set("m_hide", "Sembunyikan ke tray", "Hide to tray");
+            Set("m_show", "Buka", "Show");
             Set("m_expand", "Buka", "Expand");
             Set("m_top", "Selalu di atas", "Always on top");
             Set("m_exit", "Keluar", "Exit");
@@ -115,12 +118,18 @@ namespace StickyCountdown
             Set("p_until_passed", "Jam {0} sudah lewat hari ini. Hitung ke besok jam {0}?", "Time {0} has already passed today. Count to tomorrow {0}?");
             Set("set_title", "Pengaturan", "Settings");
             Set("set_lang", "BAHASA / LANGUAGE", "LANGUAGE");
+            Set("set_general", "UMUM", "GENERAL");
             Set("set_shutdown", "TIMER SHUTDOWN", "SHUTDOWN TIMER");
             Set("set_shut_off", "Tidak aktif", "Not active");
             Set("set_shut_on", "Aktif \u2014 PC shutdown dalam {0}", "Active \u2014 PC shuts down in {0}");
             Set("set_shut_btn", "Atur countdown...", "Set countdown...");
             Set("set_shut_cancel", "Batalkan", "Cancel");
             Set("set_shut_hint", "PC akan dimatikan otomatis oleh Windows saat countdown habis. Tetap berjalan walau widget ditutup.", "Windows will shut down the PC when the countdown ends. Keeps running even if the widget is closed.");
+            Set("set_autostart", "Jalankan otomatis saat Windows nyala", "Run automatically when Windows starts");
+            Set("set_autostart_hint", "Saat Windows menyala, widget langsung masuk ke tray (icon kecil di samping jam).", "When Windows starts, the widget goes straight to the tray (small icon near the clock).");
+            Set("ball_ready", "{0} sudah bisa dipakai lagi!", "{0} is ready to use again!");
+            Set("ball_model", "Model", "Model");
+            Set("tray_pending", "SIAP! Klik Done", "READY! Click Done");
             Set("p_shut_title", "Timer shutdown", "Shutdown timer");
             Set("p_shut_text", "Shutdown dalam berapa menit? (1 - 1440)", "Shut down in how many minutes? (1 - 1440)");
             Set("p_shut_err", "Masukkan angka menit antara 1 sampai 1440.", "Enter a number of minutes between 1 and 1440.");
@@ -176,13 +185,25 @@ namespace StickyCountdown
         private static extern bool SetProcessDPIAware();
 
         [STAThread]
-        static void Main()
+        static void Main(string[] args)
         {
             try { SetProcessDPIAware(); }
             catch { }
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new StickyForm());
+
+            bool startTray = false;
+            if (args != null)
+            {
+                foreach (string a in args)
+                {
+                    if (string.Equals(a, "--tray", StringComparison.OrdinalIgnoreCase)) startTray = true;
+                }
+            }
+
+            StickyForm form = new StickyForm();
+            form.StartHidden = startTray;
+            Application.Run(form);
         }
     }
 
@@ -286,9 +307,12 @@ namespace StickyCountdown
 
         Label titleLabel;
         Label langHead;
+        Label genHead;
         Label shutHead;
         Label shutStatus;
         Label shutHint;
+        Label autoHint;
+        CheckBox cbAuto;
         RadioButton rbId;
         RadioButton rbEn;
         RoundButton closeBtn;
@@ -331,7 +355,7 @@ namespace StickyCountdown
             tick.Tick += delegate(object s, EventArgs e) { UpdateShutdownStatus(); };
             tick.Start();
 
-            ClientSize = new Size(S(330), S(262));
+            ClientSize = new Size(S(330), S(350));
             PositionNearOwner();
         }
 
@@ -379,7 +403,27 @@ namespace StickyCountdown
             closeBtn.Click += delegate(object s, EventArgs e) { Close(); };
 
             langHead = MakeHead();
+            genHead = MakeHead();
             shutHead = MakeHead();
+
+            cbAuto = new CheckBox();
+            cbAuto.AutoSize = false;
+            cbAuto.BackColor = Color.Transparent;
+            cbAuto.ForeColor = Ui.Text;
+            cbAuto.Font = new Font("Segoe UI", 9.5f);
+            cbAuto.FlatStyle = FlatStyle.Standard;
+            cbAuto.CheckedChanged += delegate(object s, EventArgs e)
+            {
+                if (applying) return;
+                main.SetAutoStart(cbAuto.Checked);
+            };
+
+            autoHint = new Label();
+            autoHint.AutoSize = false;
+            autoHint.BackColor = Color.Transparent;
+            autoHint.ForeColor = Ui.Hint;
+            autoHint.Font = new Font("Segoe UI", 7.5f);
+            autoHint.TextAlign = ContentAlignment.TopLeft;
 
             rbId = MakeRadio();
             rbEn = MakeRadio();
@@ -433,7 +477,10 @@ namespace StickyCountdown
             Controls.Add(titleLabel);
             Controls.Add(closeBtn);
             Controls.Add(langHead);
+            Controls.Add(genHead);
             Controls.Add(shutHead);
+            Controls.Add(cbAuto);
+            Controls.Add(autoHint);
             Controls.Add(rbId);
             Controls.Add(rbEn);
             Controls.Add(shutStatus);
@@ -495,6 +542,13 @@ namespace StickyCountdown
             closeBtn.SetBounds(w - pad - S(24), S(9), S(24), S(24));
 
             int y = S(52);
+            genHead.SetBounds(pad, y, w - pad * 2, S(12));
+            y += S(18);
+            cbAuto.SetBounds(pad + S(2), y, w - pad * 2 - S(4), S(22));
+            y += S(24);
+            autoHint.SetBounds(pad, y, w - pad * 2, S(26));
+            y += S(34);
+
             langHead.SetBounds(pad, y, w - pad * 2, S(12));
             y += S(18);
             rbId.SetBounds(pad + S(4), y, w - pad * 2 - S(8), S(22));
@@ -518,9 +572,13 @@ namespace StickyCountdown
             applying = true;
             titleLabel.Text = Lang.T("set_title");
             Text = Lang.T("set_title");
+            genHead.Text = Lang.T("set_general");
             langHead.Text = Lang.T("set_lang");
             shutHead.Text = Lang.T("set_shutdown");
             shutHint.Text = Lang.T("set_shut_hint");
+            cbAuto.Text = Lang.T("set_autostart");
+            autoHint.Text = Lang.T("set_autostart_hint");
+            cbAuto.Checked = main.GetAutoStart();
             setBtn.Text = Lang.T("set_shut_btn");
             cancelBtn.Text = Lang.T("set_shut_cancel");
             rbId.Text = "Bahasa Indonesia";
@@ -624,7 +682,10 @@ namespace StickyCountdown
         bool applying;
         bool pulseFlip;
         SettingsForm settingsForm;
+        NotifyIcon tray;
+        ToolStripMenuItem miHide;
 
+        public bool StartHidden;
         public DateTime ShutdownTarget = DateTime.MinValue;
 
         Label titleLabel;
@@ -667,6 +728,7 @@ namespace StickyCountdown
             TopMost = topMostOn;
             BuildUi();
             ApplySettings();
+            InitTray();
 
             tick = new System.Windows.Forms.Timer();
             tick.Interval = 500;
@@ -737,6 +799,7 @@ namespace StickyCountdown
             foreach (Row r in rows)
                 r.NameBox.DeselectAll();
             notesBox.DeselectAll();
+            if (StartHidden) HideToTray();
         }
 
         protected override void OnResize(EventArgs e)
@@ -818,7 +881,7 @@ namespace StickyCountdown
             minBtn.FlatAppearance.BorderSize = 0;
             minBtn.FlatAppearance.MouseOverBackColor = Ui.BtnHover;
             minBtn.FlatAppearance.MouseDownBackColor = Ui.BtnDown;
-            minBtn.Click += delegate(object s, EventArgs e) { Collapse(); };
+            minBtn.Click += delegate(object s, EventArgs e) { HideToTray(); };
 
             gearBtn = MakeButton("\u2699", 12);
             gearBtn.Font = new Font("Segoe UI Symbol", 10f);
@@ -930,6 +993,9 @@ namespace StickyCountdown
             ToolStripMenuItem miSettings = new ToolStripMenuItem();
             miSettings.Click += delegate(object s, EventArgs e) { OpenSettings(); };
 
+            miHide = new ToolStripMenuItem();
+            miHide.Click += delegate(object s, EventArgs e) { HideToTray(); };
+
             miCompact = new ToolStripMenuItem();
             miCompact.Click += delegate(object s, EventArgs e)
             {
@@ -954,6 +1020,7 @@ namespace StickyCountdown
             globalMenu.Items.Add(miAdd);
             globalMenu.Items.Add(miSettings);
             globalMenu.Items.Add(miCompact);
+            globalMenu.Items.Add(miHide);
             globalMenu.Items.Add(miTopMost);
             globalMenu.Items.Add(new ToolStripSeparator());
             globalMenu.Items.Add(miExit);
@@ -962,6 +1029,7 @@ namespace StickyCountdown
                 miAdd.Text = Lang.T("m_add");
                 miSettings.Text = Lang.T("m_settings");
                 miCompact.Text = compact ? Lang.T("m_expand") : Lang.T("m_shrink");
+                miHide.Text = Lang.T("m_hide");
                 miTopMost.Text = Lang.T("m_top");
                 miExit.Text = Lang.T("m_exit");
                 applying = true;
@@ -1217,6 +1285,110 @@ namespace StickyCountdown
             SaveSettings();
         }
 
+        void InitTray()
+        {
+            tray = new NotifyIcon();
+            try { tray.Icon = Icon; }
+            catch { }
+            if (tray.Icon == null) tray.Icon = SystemIcons.Application;
+            tray.Text = "Limit LLM";
+            tray.Visible = true;
+            tray.DoubleClick += delegate(object s, EventArgs e) { RestoreFromTray(); };
+
+            ContextMenuStrip tm = new ContextMenuStrip();
+            ToolStripMenuItem tShow = new ToolStripMenuItem();
+            tShow.Click += delegate(object s, EventArgs e) { RestoreFromTray(); };
+            ToolStripMenuItem tSettings = new ToolStripMenuItem();
+            tSettings.Click += delegate(object s, EventArgs e) { RestoreFromTray(); OpenSettings(); };
+            ToolStripMenuItem tExit = new ToolStripMenuItem();
+            tExit.Click += delegate(object s, EventArgs e) { Close(); };
+            tm.Items.Add(tShow);
+            tm.Items.Add(tSettings);
+            tm.Items.Add(new ToolStripSeparator());
+            tm.Items.Add(tExit);
+            tm.Opening += delegate(object s, System.ComponentModel.CancelEventArgs e)
+            {
+                tShow.Text = Lang.T("m_show");
+                tSettings.Text = Lang.T("m_settings");
+                tExit.Text = Lang.T("m_exit");
+            };
+            tray.ContextMenuStrip = tm;
+        }
+
+        void HideToTray()
+        {
+            if (AnyPending()) return;
+            if (tray == null) return;
+            UpdateTrayText();
+            Hide();
+        }
+
+        void RestoreFromTray()
+        {
+            Show();
+            TopMost = topMostOn;
+            ApplyTopMost();
+            SetForegroundWindow(Handle);
+            Invalidate(true);
+        }
+
+        void UpdateTrayText()
+        {
+            if (tray == null) return;
+            string t;
+            if (AnyPending()) t = "Limit LLM - " + Lang.T("tray_pending");
+            else
+            {
+                TimeSpan best = TimeSpan.MaxValue;
+                bool found = false;
+                foreach (Row r in rows)
+                {
+                    if (r.Mode == "none" || r.Ready) continue;
+                    TimeSpan rem = r.Target - DateTime.Now;
+                    if (rem < best) { best = rem; found = true; }
+                }
+                t = found ? "Limit LLM - " + FormatRemaining(best) : "Limit LLM";
+            }
+            if (t.Length > 63) t = t.Substring(0, 63);
+            if (tray.Text != t) tray.Text = t;
+        }
+
+        static bool IsAutoStartEnabled()
+        {
+            try
+            {
+                using (RegistryKey k = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", false))
+                {
+                    if (k == null) return false;
+                    object v = k.GetValue("StickyCountdown");
+                    return v != null;
+                }
+            }
+            catch { return false; }
+        }
+
+        public void SetAutoStart(bool on)
+        {
+            try
+            {
+                using (RegistryKey k = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", true))
+                {
+                    if (k == null) return;
+                    if (on) k.SetValue("StickyCountdown", "\"" + Application.ExecutablePath + "\" --tray");
+                    else k.DeleteValue("StickyCountdown", false);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Auto start: " + ex.Message, "Limit LLM", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        public bool GetAutoStart()
+        {
+            return IsAutoStartEnabled();
+        }
+
         void ApplyRowFill(Row r, Color fill)
         {
             r.Host.FillColor = fill;
@@ -1318,8 +1490,8 @@ namespace StickyCountdown
                 minBtn.Enabled = !locked;
                 tip.SetToolTip(minBtn, locked ? Lang.T("tip_min_locked") : Lang.T("tip_min"));
             }
-            if (globalMenu != null && globalMenu.Items.Count > 2)
-                globalMenu.Items[2].Enabled = !locked;
+            if (miCompact != null) miCompact.Enabled = !locked;
+            if (miHide != null) miHide.Enabled = !locked;
             if (locked && compact) Expand();
         }
 
@@ -1471,9 +1643,24 @@ namespace StickyCountdown
 
         void OnRowFinished(Row r)
         {
+            bool wasHidden = !Visible;
             if (compact) Expand();
-            SetForegroundWindow(Handle);
-            ApplyTopMost();
+            if (wasHidden && tray != null)
+            {
+                RestoreFromTray();
+                try
+                {
+                    string nm = r.NameBox.Text.Trim();
+                    if (nm.Length == 0) nm = Lang.T("ball_model");
+                    tray.ShowBalloonTip(5000, "Limit LLM", Lang.T("ball_ready", nm), ToolTipIcon.Info);
+                }
+                catch { }
+            }
+            else
+            {
+                SetForegroundWindow(Handle);
+                ApplyTopMost();
+            }
             UpdateMinimizeState();
             SaveSettings();
         }
@@ -1512,6 +1699,7 @@ namespace StickyCountdown
             }
 
             UpdateCompactLabel();
+            UpdateTrayText();
 
             if (fieldDirty && Environment.TickCount - fieldChangedAt > 3000)
             {
@@ -1836,6 +2024,12 @@ namespace StickyCountdown
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             SaveSettings();
+            if (tray != null)
+            {
+                tray.Visible = false;
+                tray.Dispose();
+                tray = null;
+            }
             base.OnFormClosing(e);
         }
     }

@@ -11,8 +11,10 @@ Widget desktop ringan untuk melacak **countdown reset limit pemakaian model AI**
 - **Dua cara atur reset** (klik kanan baris → pilih):
   - **Hitung mundur ... jam** — misal isi `5` (bisa desimal, `4.5`), otomatis countdown 5 jam
   - **Sampai jam ...** — misal `22:00`, countdown sampai jam 10 malam (kalau sudah lewat, ditanya mau ke besok atau langsung SIAP)
-- **Auto popup saat countdown habis** — widget otomatis muncul lagi (walau sedang diperkecil), baris berkedip, dan **tidak bisa diperkecil sampai kamu klik Done**. Jadi reminder-nya susah diabaikan
-- **Minimize ke pill mungil** — tombol **−** menyusutkan widget jadi pill kecil biar tidak menghalangi produktivitas, klik **□** untuk buka lagi
+- **Auto popup saat countdown habis** — widget otomatis muncul lagi (walau sedang disembunyikan di tray atau diperkecil), baris berkedip, dan **tidak bisa disembunyikan/diperkecil sampai kamu klik Done**. Plus notifikasi Windows (toast) saat habis
+- **Minimize ke system tray** — tombol **−** menyembunyikan widget dari layar dan tetap ada sebagai **icon di tray** (pojok kanan samping jam, bareng Windows Defender dll). Klik 2x icon tray untuk buka lagi. Klik 2x header untuk mode pill kecil
+- **Auto start Windows** (di ⚙ Pengaturan) — widget otomatis jalan saat Windows nyala, langsung tersembunyi rapi di tray
+- **Countdown akurat walau PC mati/restart** — target disimpan sebagai waktu absolut, jadi sisa waktu menyesuaikan sendiri; kalau limitnya habis saat PC mati, begitu nyala barisnya langsung SIAP
 - **Ukuran fleksibel** — seret tepi/sudut widget (ada grip di kanan bawah), ukuran tersimpan otomatis
 - **Bagian catatan** — tulis info bebas, misal jam pakai ideal atau harga model yang beda per jam (contoh: diskon DeepSeek di jam tertentu)
 - **Pengaturan (⚙)** — di dalamnya ada:
@@ -34,9 +36,11 @@ Saat countdown habis: baris berubah hijau + tombol **Done** muncul. Setelah klik
 
 Kontrol lain:
 
-- **−** (kanan atas) — perkecil jadi pill; **□** — buka lagi
-- **⚙** (kanan atas) — pengaturan: bahasa & timer shutdown
-- **×** (kanan atas) — keluar
+- **−** (kanan atas) — sembunyikan ke tray; **□** — buka lagi
+- **⚙** (kanan atas) — pengaturan: bahasa, auto start Windows, timer shutdown
+- **Klik 2x icon tray** — buka widget lagi (klik kanan icon → menu)
+- **Klik 2x di header** — mode pill kecil (hemat tempat)
+- **×** (kanan atas) — keluar total
 - **Drag header** — pindahkan widget
 - **Seret tepi / sudut kanan bawah** — ubah ukuran widget
 - **Klik kanan area kosong** — menu: tambah model, perkecil, selalu di atas, keluar
